@@ -13,7 +13,8 @@ import numpy as np
 
 from . import __version__
 from .ball import detect_hit_candidates
-from .calibration import calibration_check_image, load_calibration
+from .calibration import calibration_check_image, load_calibration, read_frame
+from .camera import CameraMotion
 from .court import CourtHomography, in_court
 from .detection import BALL, PERSON, Detection, Detector, build_detector, save_detections
 from .heatmap import save_heatmap, save_trajectories
@@ -29,8 +30,8 @@ SCHEMA_VERSION = "0.1"
 
 @dataclass
 class PipelineConfig:
-    detector: str = "ultralytics"
-    weights: str = "yolo11s.pt"
+    detector: str = "yolox"
+    weights: str | None = None  # por defecto: yolox_m.onnx (yolox) o yolo11s.pt (ultralytics)
     detections_path: str | None = None  # para detector "replay"
     device: str | None = None
     imgsz: int = 1280
@@ -43,6 +44,10 @@ class PipelineConfig:
     start_s: float = 0.0
     end_s: float | None = None
     annotated_video: bool = False
+    # Corrige movimientos de cámara y descarta cambios de plano (repeticiones, primeros planos).
+    stabilize: bool = True
+    # Recorta la zona de la pista antes de detectar (jugadores lejanos más grandes para el modelo).
+    court_roi: bool = True
     use_llm: bool = True
     context: dict = field(default_factory=dict)  # {"tipo_sesion": "partido"|"entrenamiento", "nivel": ...}
     player_names: dict = field(default_factory=dict)  # {"J1": "Lucía"} — nunca se envía a la IA
@@ -75,10 +80,16 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
     points = _scale_points(calib["image_points"], calib.get("frame_size"), (w, h))
     hom = CourtHomography.from_points(points)
 
+    weights = cfg.weights or {"yolox": "yolox_m.onnx", "ultralytics": "yolo11s.pt"}.get(cfg.detector)
     if detector is None:
         detector = build_detector(
-            cfg.detector, weights=cfg.weights, device=cfg.device, imgsz=cfg.imgsz, path=cfg.detections_path, conf=min(cfg.min_person_conf, 0.25)
+            cfg.detector, weights=weights, device=cfg.device, imgsz=cfg.imgsz, path=cfg.detections_path, conf=min(cfg.min_person_conf, 0.25)
         )
+    ref_frame = read_frame(video_path, int(calib.get("frame_index", 0)))
+    # Zona de la pista en el fotograma de calibración (con margen) para recortar antes de detectar.
+    court_ref_poly = hom.court_to_image(np.array([[-1.5, -1.5], [11.5, -1.5], [11.5, 21.5], [-1.5, 21.5]]))
+    court_floor = hom.court_to_image(np.array([[0, 0], [10, 0], [10, 20], [0, 20]]))
+    camera = CameraMotion(ref_frame, court_polygon=court_floor) if cfg.stabilize else None
     timings["carga_s"] = time.perf_counter() - t0
 
     step = max(1, round(fps / cfg.analysis_fps))
@@ -87,8 +98,8 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
     tracker = SlotTracker(max_players=cfg.max_players)
     all_dets: list[Detection] = []
     balls: list[Detection] = []
-    calib_frame = None
     processed = 0
+    valid = 0
 
     t1 = time.perf_counter()
     cap.set(cv2.CAP_PROP_POS_FRAMES, first)
@@ -102,8 +113,16 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         ok, frame = cap.read()
         if not ok:
             break
-        if calib_frame is None:
-            calib_frame = frame.copy()
+        processed += 1
+        H = np.eye(3)
+        if camera is not None:
+            H = camera.frame_to_reference(frame)
+            if H is None:  # otro plano: no se analiza (y no se gasta GPU en él)
+                idx += 1
+                continue
+        valid += 1
+        if cfg.court_roi and hasattr(detector, "roi"):
+            detector.roi = _roi_from_poly(court_ref_poly, np.linalg.inv(H), frame.shape)
         dets = detector.detect(frame, idx)
         all_dets.extend(dets)
         t = idx / fps
@@ -111,7 +130,7 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         balls.extend(d for d in dets if d.cls == BALL)
         if persons:
             feet = np.array([d.foot_point for d in persons])
-            court_xy = hom.image_to_court_pts(feet)
+            court_xy = hom.image_to_court_pts(_apply_h(H, feet))
             mask = in_court(court_xy, cfg.court_margin_m)
             obs = [
                 PlayerObservation(idx, t, (float(c[0]), float(c[1])), (d.x1, d.y1, d.x2, d.y2), d.conf)
@@ -119,12 +138,13 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
                 if m
             ]
             tracker.update(t, obs)
-        processed += 1
         idx += 1
     cap.release()
     timings["deteccion_s"] = time.perf_counter() - t1
 
-    analyzed_s = (min(idx, last) - first) / fps
+    total_s = (min(idx, last) - first) / fps
+    # Solo cuenta el tiempo con el plano bueno (sin repeticiones ni primeros planos).
+    analyzed_s = total_s * (valid / processed) if processed else 0.0
     t2 = time.perf_counter()
     tracks = tracker.finalize()
     hits = detect_hit_candidates(balls, tracks, fps)
@@ -133,7 +153,7 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
     trajectories = {}
     for tr in tracks:
         p = player_stats(tr, analyzed_s, hits)
-        p["observaciones"] = player_insights(p)
+        p["observaciones"] = player_insights(p, analyzed_s)
         hm_png = save_heatmap(p["_heatmap"], out_dir / f"mapa_calor_{tr.track_id}.png", f"Mapa de calor {tr.track_id}")
         p["mapa_calor_png"] = hm_png.name
         p["mapa_calor_celdas"] = np.round(p["_heatmap"], 4).tolist()
@@ -141,11 +161,10 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         players.append(p)
     pairs = pair_stats(tracks)
     for pair in pairs:
-        pair["observaciones"] = pair_insights(pair)
+        pair["observaciones"] = pair_insights(pair, analyzed_s)
     if trajectories:
         save_trajectories(trajectories, out_dir / "recorridos.png")
-    if calib_frame is not None:
-        calibration_check_image(calib_frame, hom, points, out_dir / "calibracion_check.png")
+    calibration_check_image(ref_frame, hom, points, out_dir / "calibracion_check.png")
     timings["estadisticas_s"] = time.perf_counter() - t2
 
     (out_dir / "trayectorias.json").write_text(
@@ -162,11 +181,11 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         "Si dos jugadores se cruzan muy cerca, sus etiquetas pueden intercambiarse.",
     ]
     if hom.reprojection_error_px > 8:
-        limitations.insert(0, f"Calibración imprecisa (error {hom.reprojection_error_px:.1f} px): revisa calibracion_check.png.")
+        limitations.insert(0, f"Calibración imprecisa (error {hom.reprojection_error_px:.1f} px): revisa calibracion_check.png y el punto con más error: {max(hom.point_errors_px, key=hom.point_errors_px.get)}.")
 
     analysis = {
         "version_esquema": SCHEMA_VERSION,
-        "motor": {"version": __version__, "detector": detector.name, "pesos": cfg.weights if detector.name == "ultralytics" else None},
+        "motor": {"version": __version__, "detector": detector.name, "pesos": weights if detector.name in ("yolox", "ultralytics") else None},
         "video": {
             "archivo": video_path.name,
             "fps": round(fps, 2),
@@ -177,10 +196,13 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
             "duracion_analizada_s": round(analyzed_s, 2),
             "fps_analisis": round(fps / step, 2),
             "fotogramas_procesados": processed,
+            "fotogramas_validos": valid,
+            "fotogramas_descartados_cambio_plano": processed - valid,
         },
         "calibracion": {
             "puntos": {k: [round(v[0], 1), round(v[1], 1)] for k, v in points.items()},
             "error_reproyeccion_px": round(hom.reprojection_error_px, 2),
+            "error_por_punto_px": hom.point_errors_px,
         },
         "jugadores": [{k: v for k, v in p.items() if not k.startswith("_")} for p in players],
         "parejas": pairs,
@@ -208,6 +230,24 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
 
     (out_dir / "analisis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
     return analysis
+
+
+def _apply_h(H: np.ndarray, pts: np.ndarray) -> np.ndarray:
+    return cv2.perspectiveTransform(np.asarray(pts, dtype=np.float64).reshape(-1, 1, 2), H).reshape(-1, 2)
+
+
+def _roi_from_poly(ref_poly: np.ndarray, ref_to_frame: np.ndarray, shape) -> tuple[int, int, int, int]:
+    """Rectángulo que contiene la pista en este fotograma, con hueco arriba para el cuerpo de los jugadores lejanos."""
+    h, w = shape[:2]
+    poly = _apply_h(ref_to_frame, ref_poly)
+    x1, y1 = poly.min(axis=0)
+    x2, y2 = poly.max(axis=0)
+    y1 -= 0.12 * h
+    x1, y1 = max(0, int(x1)), max(0, int(y1))
+    x2, y2 = min(w, int(x2)), min(h, int(y2))
+    if x2 - x1 < w * 0.2 or y2 - y1 < h * 0.2:
+        return (0, 0, w, h)
+    return (x1, y1, x2, y2)
 
 
 def _write_annotated(video_path: Path, out_path: Path, tracks, hom: CourtHomography, out_fps: float, first: int, last: int, step: int) -> None:

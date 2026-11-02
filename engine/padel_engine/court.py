@@ -86,6 +86,7 @@ class CourtHomography:
 
     image_to_court: np.ndarray  # matriz 3x3
     reprojection_error_px: float
+    point_errors_px: dict | None = None  # error de cada punto marcado (para saber cuál revisar)
 
     @classmethod
     def from_points(cls, image_points: dict[str, tuple[float, float]]) -> "CourtHomography":
@@ -97,14 +98,16 @@ class CourtHomography:
         names = list(image_points)
         src = np.array([image_points[n] for n in names], dtype=np.float64)
         dst = np.array([KEYPOINTS[n] for n in names], dtype=np.float64)
-        method = cv2.RANSAC if len(names) > 4 else 0
-        H, _ = cv2.findHomography(src, dst, method, 0.5)
+        # Mínimos cuadrados con TODOS los puntos (con pocos puntos, RANSAC puede descartar uno bueno).
+        H, _ = cv2.findHomography(src, dst, 0)
         if H is None:
             raise CalibrationError("No se pudo calcular la homografía (¿puntos alineados o repetidos?).")
         hom = cls(image_to_court=H, reprojection_error_px=0.0)
-        # Error de reproyección en píxeles: cuánto se desvían los puntos marcados.
+        # Error de reproyección en píxeles: cuánto se desvía cada punto marcado.
         reproj = hom.court_to_image(dst)
-        hom.reprojection_error_px = float(np.mean(np.linalg.norm(reproj - src, axis=1)))
+        errs = np.linalg.norm(reproj - src, axis=1)
+        hom.reprojection_error_px = float(np.mean(errs))
+        hom.point_errors_px = {n: round(float(e), 1) for n, e in zip(names, errs)}
         return hom
 
     @property

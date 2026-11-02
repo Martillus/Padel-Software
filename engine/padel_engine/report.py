@@ -119,7 +119,10 @@ def generate_template(analysis: dict) -> str:
             "",
         ]
         fortalezas = [o for o in p.get("observaciones", []) if o["tipo"] == "fortaleza"]
-        mejoras = [o for o in p.get("observaciones", []) if o["tipo"] in ("mejora", "aviso")]
+        mejoras = [o for o in p.get("observaciones", []) if o["tipo"] == "mejora"]
+        avisos = [o for o in p.get("observaciones", []) if o["tipo"] == "aviso"]
+        if avisos:
+            lines += [f"> ⚠️ {o['texto']}" for o in avisos] + [""]
         if fortalezas:
             lines += ["**Puntos fuertes**", ""] + [f"- {o['texto']}" for o in fortalezas] + [""]
         if mejoras:

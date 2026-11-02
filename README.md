@@ -28,7 +28,7 @@ lo analiza y genera un informe por alumno y su evolución en el tiempo.
 ```bash
 cd engine
 python -m venv .venv && source .venv/bin/activate   # en Windows: .venv\Scripts\activate
-pip install -e ".[yolo,dev]"
+pip install -e ".[dev]"
 ```
 
 ```bash

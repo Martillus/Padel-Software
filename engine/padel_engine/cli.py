@@ -26,12 +26,15 @@ def _cmd_analizar(a: argparse.Namespace) -> int:
         start_s=a.desde,
         end_s=a.hasta,
         annotated_video=a.video_anotado,
+        stabilize=not a.sin_estabilizar,
         use_llm=not a.sin_ia,
         context={"tipo_sesion": a.tipo_sesion, "nivel": a.nivel},
         player_names=names,
     )
     res = run_pipeline(a.video, a.calibracion, a.salida, cfg)
     print(f"\nListo. Resultados en: {a.salida}")
+    v = res["video"]
+    print(f"  Fotogramas analizados: {v['fotogramas_validos']} de {v['fotogramas_procesados']} (descartados por cambio de plano: {v['fotogramas_descartados_cambio_plano']})")
     print(f"  Jugadores detectados: {', '.join(p['id'] for p in res['jugadores']) or 'ninguno'}")
     print(f"  Error de calibración: {res['calibracion']['error_reproyeccion_px']} px (revisa calibracion_check.png)")
     print(f"  Informe: {'IA' if res['informe']['generado_con_ia'] else 'plantilla (sin IA)'} -> informe.md")
@@ -89,8 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("video")
     p.add_argument("--calibracion", required=True, help="JSON con los puntos de la pista")
     p.add_argument("--salida", required=True, help="Carpeta de resultados")
-    p.add_argument("--detector", default="ultralytics", choices=["ultralytics", "torchvision", "replay"])
-    p.add_argument("--pesos", default="yolo11s.pt", help="Pesos YOLO (ultralytics)")
+    p.add_argument("--detector", default="yolox", choices=["yolox", "ultralytics", "torchvision", "replay"])
+    p.add_argument("--pesos", default=None, help="Modelo: yolox_s.onnx / yolox_m.onnx (defecto) / yolox_l.onnx, o pesos YOLO de ultralytics")
     p.add_argument("--detecciones", help="detecciones.json para --detector replay")
     p.add_argument("--dispositivo", default=None, help="cpu, cuda, mps... (auto por defecto)")
     p.add_argument("--imgsz", type=int, default=1280)
@@ -103,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--nivel", default="desconocido")
     p.add_argument("--sin-ia", action="store_true", help="Informe de plantilla, sin llamar al modelo de lenguaje")
     p.add_argument("--video-anotado", action="store_true", help="Genera video_anotado.mp4 de control")
+    p.add_argument("--sin-estabilizar", action="store_true", help="Cámara totalmente fija: no corregir movimiento ni detectar cambios de plano")
     p.set_defaults(func=_cmd_analizar)
 
     c = sub.add_parser("calibrar", help="Marca los puntos de la pista en un fotograma")

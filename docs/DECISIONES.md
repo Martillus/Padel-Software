@@ -18,17 +18,20 @@ Revisado (v0.1.0, repositorio `rondo-labs/Padex`):
 Decisión: motor propio, pequeño y bajo nuestro control. Revisaremos Padex de vez en
 cuando para comparar resultados. ⚠️ No copiar fragmentos de su código en este repositorio.
 
-## 2. Detector de personas: YOLO de Ultralytics para prototipar ⚖️💶
+## 2. Detector de personas: YOLOX (Apache-2.0) por defecto ⚖️💶
 
-- Ultralytics es el más preciso y cómodo, pero su licencia es **AGPL-3.0**: en un SaaS la
-  interpretación prudente es que obliga a ofrecer el código fuente del servicio a los
-  usuarios, salvo que compres la **licencia Enterprise** de Ultralytics.
-- Para el piloto gratuito es asumible. **Antes de cobrar** hay que elegir:
-  1. Comprar la licencia de Ultralytics (pide presupuesto), o
-  2. Cambiar a un detector con licencia permisiva (Apache/BSD): `torchvision` ya está
-     implementado (BSD), u otros como RT-DETR/RF-DETR (Apache-2.0) entrenados por nosotros.
-- El código está preparado: el detector se cambia con `--detector`, sin tocar lo demás.
-- 👉 Punto para el abogado: confirmar la interpretación de la AGPL en nuestro caso.
+- **Por defecto usamos YOLOX** (de Megvii) en formato ONNX. Licencia **Apache-2.0**: uso
+  comercial sin obligación de publicar nuestro código. Además no necesita PyTorch, así que la
+  instalación es ligera y el contenedor de GPU más pequeño y barato.
+- Modelos: `yolox_s.onnx` (rápido), `yolox_m.onnx` (por defecto, buen equilibrio),
+  `yolox_l.onnx` (más preciso, más lento). Se descargan solos la primera vez.
+- **Ultralytics YOLO** sigue disponible (`--detector ultralytics`) para comparar, pero es
+  **AGPL-3.0**: no usarlo en producción sin comprar su licencia Enterprise.
+- `torchvision` (BSD) también está disponible como alternativa.
+- 👉 Punto para el abogado: revisar las licencias de los pesos de los modelos (los de YOLOX
+  están entrenados con COCO, cuyas imágenes tienen licencias diversas). Es una práctica común
+  en la industria, pero conviene confirmarlo. Cuando entrenemos modelos propios con vídeos
+  nuestros (con permiso), este punto desaparece.
 
 ## 3. Analizar 10 fotogramas por segundo 💶📈
 
@@ -79,7 +82,18 @@ Conclusiones:
   a los X días (configurable) y guardar solo resultados es bueno para costes *y* para el RGPD.
 - Los precios de proveedores cambian: verifícalos al crear las cuentas.
 
-## 8. Escalabilidad 📈
+## 8. Movimiento de cámara y cambios de plano 📈
+
+El motor corrige automáticamente los movimientos de cámara (móvil en la mano, trípode que se
+golpea, zoom de la retransmisión) y **descarta los fotogramas de otros planos** (repeticiones,
+primeros planos). Lo hace buscando detalles fijos de la imagen y comprobando que la pista se
+parece a la del fotograma de calibración. Los fotogramas descartados no pasan por el detector,
+así que tampoco cuestan GPU.
+
+Probado con un vídeo real: retransmisión grabada con el móvil en la mano y que termina en un
+primer plano. Los 4 jugadores se siguieron todo el punto y el primer plano se descartó.
+
+## 9. Escalabilidad 📈
 
 - El worker es sin estado: Modal arranca tantas GPUs como trabajos haya en cola.
 - Un vídeo de 1 h tarda ~10 min en procesarse en GPU; el entrenador recibe aviso al terminar.

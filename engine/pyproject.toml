@@ -15,6 +15,7 @@ dependencies = [
   "matplotlib>=3.8",
   "anthropic>=2.3",
   "python-dotenv>=1.0",
+  "onnxruntime>=1.17",
 ]
 
 [project.optional-dependencies]

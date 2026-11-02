@@ -18,8 +18,10 @@ Recibe **un vídeo + la calibración de la pista** y devuelve:
 1. **Calibración**: marcas 4–6 puntos de la pista en un fotograma (esquinas, postes de la
    red, líneas de saque). Con eso el programa sabe convertir píxeles en metros reales
    (eso es la *homografía*).
-2. **Detección**: un modelo de visión (YOLO) encuentra a las personas y la bola en 10
-   fotogramas por segundo. Sin reconocimiento facial.
+2. **Detección**: un modelo de visión (YOLOX, licencia Apache-2.0) encuentra a las personas
+   y la bola en 10 fotogramas por segundo. Sin reconocimiento facial. Si la cámara se mueve
+   o cambia de plano (repeticiones, primeros planos), el motor lo corrige o descarta esos
+   fotogramas automáticamente.
 3. **Seguimiento**: el punto de apoyo de cada jugador (los pies) se pasa a metros y se
    asigna a J1…J4 de forma estable. J1/J2 = campo cercano (izq./der.), J3/J4 = campo lejano.
 4. **Métricas**: distancia, velocidad, tiempo en red/transición/fondo, sprints, pareja
@@ -32,7 +34,7 @@ Recibe **un vídeo + la calibración de la pista** y devuelve:
 Instalación (Python 3.11+):
 
 ```bash
-pip install -e ".[yolo,dev]"
+pip install -e ".[dev]"
 ```
 
 1) Calibrar (abre una ventana; clica cada punto que se pida o pulsa clic derecho si no se ve):
@@ -57,7 +59,11 @@ padel-engine analizar mi_video.mp4 --calibracion mi_pista.json --salida resultad
 ```
 
 Opciones útiles: `--tipo-sesion entrenamiento`, `--jugadores 3`, `--nombres examples/nombres_ejemplo.json`,
-`--sin-ia`, `--dispositivo cuda`, `--pesos yolo11m.pt` (más preciso, más lento).
+`--sin-ia`, `--pesos yolox_s.onnx` (más rápido) o `--pesos yolox_l.onnx` (más preciso),
+`--sin-estabilizar` (cámara totalmente fija), `--detector ultralytics` (solo para comparar, licencia AGPL).
+
+Si el vídeo dura menos de 2 minutos de juego, el informe muestra las cifras pero no da
+consejos: con tan poco tiempo no son fiables.
 
 3) Regenerar solo el informe (sin GPU), p. ej. tras asignar nombres:
 
@@ -82,6 +88,7 @@ la real (±25 %) y que se detecta la pareja desalineada.
 | Posición, zonas, mapa de calor | Buena | Depende sobre todo de la calibración y de que se vean los pies |
 | Distancia y velocidad | Aceptable | ±10–20 %; los jugadores del fondo lejano tienen más error |
 | Métricas de pareja | Buena | Solo necesitan posiciones |
+| Cámara en mano / cambios de plano | Buena | Probado con una retransmisión grabada con el móvil |
 | Identidad J1–J4 | Aceptable | Pueden intercambiarse si se cruzan pegados; en la web se corregirá a mano |
 | Golpes (número, zona) | **Experimental** | La bola se detecta de forma intermitente |
 | Tipo de golpe, errores no forzados | **No disponible** | Necesita un modelo propio entrenado con vídeos reales (ver `docs/HOJA_DE_RUTA.md`) |

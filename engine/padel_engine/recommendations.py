@@ -37,7 +37,20 @@ EXERCISES = {
 }
 
 
-def player_insights(p: dict) -> list[dict]:
+MIN_SECONDS_FOR_ADVICE = 120  # con menos juego, las cifras no permiten sacar conclusiones
+
+
+def short_clip_notice(analyzed_s: float) -> dict:
+    return {
+        "tipo": "aviso",
+        "texto": f"Fragmento corto ({_n(round(analyzed_s))} s de juego): las cifras son una muestra, no permiten sacar conclusiones ni recomendar ejercicios.",
+        "ejercicio": None,
+    }
+
+
+def player_insights(p: dict, analyzed_s: float | None = None) -> list[dict]:
+    if analyzed_s is not None and analyzed_s < MIN_SECONDS_FOR_ADVICE:
+        return [short_clip_notice(analyzed_s)]
     z = p["zonas_pct"]
     out: list[dict] = []
     if z["transicion"] >= 30:
@@ -55,7 +68,9 @@ def player_insights(p: dict) -> list[dict]:
     return out
 
 
-def pair_insights(pair: dict) -> list[dict]:
+def pair_insights(pair: dict, analyzed_s: float | None = None) -> list[dict]:
+    if analyzed_s is not None and analyzed_s < MIN_SECONDS_FOR_ADVICE:
+        return []
     out: list[dict] = []
     if pair["desalineados_pct"] >= 20:
         out.append(
