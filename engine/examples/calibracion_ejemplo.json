@@ -1,0 +1,12 @@
+{
+  "frame_index": 0,
+  "frame_size": [1920, 1080],
+  "image_points": {
+    "near_service_left": [262.0, 905.0],
+    "near_service_right": [1658.0, 905.0],
+    "net_left": [470.0, 600.0],
+    "net_right": [1450.0, 600.0],
+    "far_left": [690.0, 255.0],
+    "far_right": [1230.0, 255.0]
+  }
+}

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Vídeos, datos y resultados: NUNCA al repositorio (datos personales, a menudo de menores)
+*.mp4
+*.mov
+*.avi
+*.mkv
+datos/
+resultados/
+out/
+
+# Pesos de modelos
+*.pt
+*.onnx
