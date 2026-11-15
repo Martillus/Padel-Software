@@ -38,6 +38,7 @@ def _cmd_analizar(a: argparse.Namespace) -> int:
     print(f"  Jugadores detectados: {', '.join(p['id'] for p in res['jugadores']) or 'ninguno'}")
     print(f"  Error de calibración: {res['calibracion']['error_reproyeccion_px']} px (revisa calibracion_check.png)")
     print(f"  Informe: {'IA' if res['informe']['generado_con_ia'] else 'plantilla (sin IA)'} -> informe.md")
+    print("  Página para el jugador: informe.html (ábrela en el navegador)")
     print(f"  Tiempo total: {res['tiempos']['total_s']} s")
     return 0
 
@@ -78,6 +79,11 @@ def _cmd_informe(a: argparse.Namespace) -> int:
     md, meta = build_report(analysis, use_llm=not a.sin_ia, context={"tipo_sesion": a.tipo_sesion, "nivel": a.nivel}, names=names)
     out = Path(a.salida or Path(a.analisis).with_name("informe.md"))
     out.write_text(md, encoding="utf-8")
+    from .report_html import build_html_report
+
+    analysis.setdefault("informe", {}).update({"archivo": out.name, **meta})
+    html_path = build_html_report(analysis, out.parent)
+    print(f"Página para el jugador: {html_path}")
     print(f"Informe ({'IA' if meta['generado_con_ia'] else 'plantilla'}) guardado en {out}")
     return 0
 

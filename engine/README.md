@@ -5,6 +5,7 @@ Recibe **un vídeo + la calibración de la pista** y devuelve:
 | Fichero | Contenido |
 |---|---|
 | `analisis.json` | Métricas por jugador y por pareja, mapa de calor en celdas, golpes estimados, limitaciones, tiempos de cómputo |
+| `informe.html` | **Página para el jugador** (un solo archivo, para móvil): "toca tu figura", estadísticas, logros, parejas e imagen para compartir en redes |
 | `informe.md` | Informe en español (con IA si hay `ANTHROPIC_API_KEY`; si no, plantilla) |
 | `mapa_calor_J*.png` | Mapa de calor de cada jugador sobre la pista |
 | `recorridos.png` | Recorridos de todos los jugadores |

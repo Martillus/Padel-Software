@@ -62,3 +62,16 @@ def test_report_template_mentions_players(result):
     _, _, out = result
     md = (out / "informe.md").read_text(encoding="utf-8")
     assert "## J1" in md and "Tiempo por zona" in md
+
+
+def test_html_report_for_player(result):
+    import re
+
+    analysis, _, out = result
+    page = (out / "informe.html").read_text(encoding="utf-8")
+    assert "¿Quién eres?" in page and "Descargar imagen para compartir" in page
+    data = json.loads(re.search(r'<script id="datos" type="application/json">(.*?)</script>', page, re.S).group(1))
+    assert [p["id"] for p in data["jugadores"]] == ["J1", "J2", "J3", "J4"]
+    assert data["foto"] and set(data["foto"]["cajas"]) == {"J1", "J2", "J3", "J4"}
+    assert all(data["logros"][pid] for pid in ("J1", "J2", "J3", "J4"))
+    assert all(p["mapa"].startswith("data:image/png;base64,") for p in data["jugadores"])

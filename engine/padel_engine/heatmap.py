@@ -30,9 +30,17 @@ def _draw_court(ax) -> None:
     ax.text(COURT_WIDTH / 2, -0.4, "cámara", ha="center", va="top", fontsize=8, color="#444")
 
 
-def save_heatmap(grid: np.ndarray, out_png: str | Path, title: str) -> Path:
-    fig, ax = plt.subplots(figsize=(3.6, 6.4), dpi=110)
+def save_heatmap(grid: np.ndarray, out_png: str | Path, title: str | None, clean: bool = False) -> Path:
+    """Mapa de calor sobre la pista. ``clean=True``: sin título ni márgenes (para la web y redes)."""
+    fig, ax = plt.subplots(figsize=(3.2, 6.4) if clean else (3.6, 6.4), dpi=110)
     _draw_court(ax)
+    if clean:
+        for t in list(ax.texts):
+            t.remove()
+        ax.set_xlim(0, COURT_WIDTH)
+        ax.set_ylim(0, COURT_LENGTH)
+        ax.set_axis_off()
+        fig.subplots_adjust(0, 0, 1, 1)
     if grid.max() > 0:
         # Suavizado (sigma = 0,5 m) y transparencia proporcional: las zonas sin presencia dejan ver la pista.
         g = gaussian_filter(grid, sigma=1.0)
@@ -40,9 +48,13 @@ def save_heatmap(grid: np.ndarray, out_png: str | Path, title: str) -> Path:
         rgba = plt.get_cmap("inferno")(g)
         rgba[..., 3] = np.clip(g**0.6 * 1.1, 0, 0.9)
         ax.imshow(rgba, extent=(0, COURT_WIDTH, 0, COURT_LENGTH), origin="lower", interpolation="bilinear", zorder=1)
-    ax.set_title(title, fontsize=10)
-    fig.tight_layout()
-    fig.savefig(out_png)
+    if clean:
+        ax.add_patch(Rectangle((0, 0), COURT_WIDTH, COURT_LENGTH, color="#2f6db5", zorder=0))
+        fig.savefig(out_png, transparent=True)
+    else:
+        ax.set_title(title, fontsize=10)
+        fig.tight_layout()
+        fig.savefig(out_png)
     plt.close(fig)
     return Path(out_png)
 

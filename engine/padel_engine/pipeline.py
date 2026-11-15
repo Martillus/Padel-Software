@@ -20,6 +20,7 @@ from .detection import BALL, PERSON, Detection, Detector, build_detector, save_d
 from .heatmap import save_heatmap, save_trajectories
 from .recommendations import pair_insights, player_insights
 from .report import build_report
+from .report_html import build_html_report
 from .stats import pair_stats, player_stats
 from .tracking import PlayerObservation, SlotTracker
 
@@ -162,6 +163,7 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         p["observaciones"] = player_insights(p, analyzed_s)
         hm_png = save_heatmap(p["_heatmap"], out_dir / f"mapa_calor_{tr.track_id}.png", f"Mapa de calor {tr.track_id}")
         p["mapa_calor_png"] = hm_png.name
+        p["mapa_calor_web_png"] = save_heatmap(p["_heatmap"], out_dir / f"mapa_calor_{tr.track_id}_web.png", None, clean=True).name
         p["mapa_calor_celdas"] = np.round(p["_heatmap"], 4).tolist()
         trajectories[tr.track_id] = p["_trayectoria"]
         players.append(p)
@@ -170,6 +172,7 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         pair["observaciones"] = pair_insights(pair, analyzed_s)
     if trajectories:
         save_trajectories(trajectories, out_dir / "recorridos.png")
+    snapshot = _players_snapshot(video_path, tracks, out_dir / "foto_jugadores.jpg")
     calibration_check_image(ref_frame, hom, points, out_dir / "calibracion_check.png")
     timings["estadisticas_s"] = time.perf_counter() - t2
 
@@ -224,6 +227,7 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         "golpes_estimados": [asdict(hit) | {"t": round(hit.t, 2)} for hit in hits],
         "detecciones": {"personas": sum(d.cls == PERSON for d in all_dets), "bolas": len(balls)},
         "limitaciones": limitations,
+        "foto_jugadores": snapshot,
     }
 
     t3 = time.perf_counter()
@@ -244,7 +248,38 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         analysis["tiempos"]["segundos_computo_por_minuto_video"] = round(timings["deteccion_s"] / (analyzed_s / 60), 2)
 
     (out_dir / "analisis.json").write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+    build_html_report(analysis, out_dir)
     return analysis
+
+
+def _players_snapshot(video_path: Path, tracks, out_path: Path, max_width: int = 1280) -> dict | None:
+    """Foto de un momento en que se ve bien a todos los jugadores (para "toca tu figura").
+
+    Se elige el fotograma con más jugadores visibles (no cortados) y con las cajas más fiables.
+    """
+    by_frame: dict[int, dict] = {}
+    for tr in tracks:
+        for ob in tr.observations:
+            if not ob.cut:
+                by_frame.setdefault(ob.frame, {})[tr.track_id] = ob
+    if not by_frame:
+        return None
+    n_max = max(len(v) for v in by_frame.values())
+    candidates = [f for f, v in by_frame.items() if len(v) == n_max]
+    best = max(candidates, key=lambda f: min(o.conf for o in by_frame[f].values()))
+    frame = read_frame(video_path, best)
+    h, w = frame.shape[:2]
+    scale = min(1.0, max_width / w)
+    if scale < 1.0:
+        frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    cv2.imwrite(str(out_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    return {
+        "archivo": out_path.name,
+        "fotograma": best,
+        "ancho": frame.shape[1],
+        "alto": frame.shape[0],
+        "cajas": {pid: [round(v * scale, 1) for v in ob.bbox] for pid, ob in by_frame[best].items()},
+    }
 
 
 def _apply_h(H: np.ndarray, pts: np.ndarray) -> np.ndarray:
