@@ -28,6 +28,7 @@ class PlayerObservation:
     court_xy: tuple[float, float]
     bbox: tuple[float, float, float, float]
     conf: float
+    cut: bool = False  # el jugador sale cortado por el borde inferior: sus pies no se ven
 
 
 @dataclass

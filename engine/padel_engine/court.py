@@ -20,9 +20,13 @@ La pista mide 10 m x 20 m. Las líneas de saque están a 6,95 m de la red.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
+
+if TYPE_CHECKING:
+    from .lens import LensModel
 
 COURT_WIDTH = 10.0
 COURT_LENGTH = 20.0
@@ -87,9 +91,10 @@ class CourtHomography:
     image_to_court: np.ndarray  # matriz 3x3
     reprojection_error_px: float
     point_errors_px: dict | None = None  # error de cada punto marcado (para saber cuál revisar)
+    lens: "LensModel | None" = None  # corrección de gran angular (opcional)
 
     @classmethod
-    def from_points(cls, image_points: dict[str, tuple[float, float]]) -> "CourtHomography":
+    def from_points(cls, image_points: dict[str, tuple[float, float]], lens: "LensModel | None" = None) -> "CourtHomography":
         unknown = set(image_points) - set(KEYPOINTS)
         if unknown:
             raise CalibrationError(f"Puntos desconocidos: {sorted(unknown)}. Válidos: {list(KEYPOINTS)}")
@@ -98,11 +103,12 @@ class CourtHomography:
         names = list(image_points)
         src = np.array([image_points[n] for n in names], dtype=np.float64)
         dst = np.array([KEYPOINTS[n] for n in names], dtype=np.float64)
+        src_ideal = lens.undistort(src) if lens is not None else src
         # Mínimos cuadrados con TODOS los puntos (con pocos puntos, RANSAC puede descartar uno bueno).
-        H, _ = cv2.findHomography(src, dst, 0)
+        H, _ = cv2.findHomography(src_ideal, dst, 0)
         if H is None:
             raise CalibrationError("No se pudo calcular la homografía (¿puntos alineados o repetidos?).")
-        hom = cls(image_to_court=H, reprojection_error_px=0.0)
+        hom = cls(image_to_court=H, reprojection_error_px=0.0, lens=lens)
         # Error de reproyección en píxeles: cuánto se desvía cada punto marcado.
         reproj = hom.court_to_image(dst)
         errs = np.linalg.norm(reproj - src, axis=1)
@@ -118,21 +124,29 @@ class CourtHomography:
         pts = np.asarray(pts, dtype=np.float64).reshape(-1, 1, 2)
         if len(pts) == 0:
             return np.zeros((0, 2))
+        if self.lens is not None:
+            pts = self.lens.undistort(pts).reshape(-1, 1, 2)
         return cv2.perspectiveTransform(pts, self.image_to_court).reshape(-1, 2)
 
     def court_to_image(self, pts: np.ndarray) -> np.ndarray:
         pts = np.asarray(pts, dtype=np.float64).reshape(-1, 1, 2)
         if len(pts) == 0:
             return np.zeros((0, 2))
-        return cv2.perspectiveTransform(pts, self.court_to_image_matrix).reshape(-1, 2)
+        out = cv2.perspectiveTransform(pts, self.court_to_image_matrix).reshape(-1, 2)
+        return self.lens.distort(out) if self.lens is not None else out
 
 
-def in_court(xy: np.ndarray, margin: float = 0.0) -> np.ndarray:
-    """True si el punto está dentro de la pista ampliada con un margen (m)."""
+def in_court(xy: np.ndarray, margin: float = 0.0, side_margin: float | None = None) -> np.ndarray:
+    """True si el punto está dentro de la pista ampliada con un margen (m).
+
+    ``side_margin`` permite un margen distinto en los laterales: el público suele estar
+    pegado al cristal lateral, así que ahí conviene ser más estricto.
+    """
     xy = np.atleast_2d(xy)
+    sm = margin if side_margin is None else side_margin
     return (
-        (xy[:, 0] >= -margin)
-        & (xy[:, 0] <= COURT_WIDTH + margin)
+        (xy[:, 0] >= -sm)
+        & (xy[:, 0] <= COURT_WIDTH + sm)
         & (xy[:, 1] >= -margin)
         & (xy[:, 1] <= COURT_LENGTH + margin)
     )

@@ -52,6 +52,12 @@ padel-engine calibrar mi_video.mp4 --salida mi_pista.json --solo-png
 
 Si grabas siempre desde el mismo sitio de la misma pista, **reutiliza la calibración**.
 
+**Cámaras con gran angular** (las típicas de club): curvan las líneas de la pista. Añade a la
+calibración una clave `lines` con puntos a lo largo de líneas rectas de la pista (línea de
+saque, línea central, red...) y el motor calcula la corrección de la lente. Ver
+`examples/calibracion_gran_angular_ejemplo.json`. En la pista de prueba, el error bajó de 10,8 px
+a 2,6 px.
+
 2) Analizar (prueba primero con un trozo de 2 minutos):
 
 ```bash
@@ -89,6 +95,7 @@ la real (±25 %) y que se detecta la pareja desalineada.
 | Distancia y velocidad | Aceptable | ±10–20 %; los jugadores del fondo lejano tienen más error |
 | Métricas de pareja | Buena | Solo necesitan posiciones |
 | Cámara en mano / cambios de plano | Buena | Probado con una retransmisión grabada con el móvil |
+| Cámaras de club con gran angular | Buena | Probado con una cámara ReplayMe; si la cámara no ve el fondo cercano, esos tramos no cuentan |
 | Identidad J1–J4 | Aceptable | Pueden intercambiarse si se cruzan pegados; en la web se corregirá a mano |
 | Golpes (número, zona) | **Experimental** | La bola se detecta de forma intermitente |
 | Tipo de golpe, errores no forzados | **No disponible** | Necesita un modelo propio entrenado con vídeos reales (ver `docs/HOJA_DE_RUTA.md`) |

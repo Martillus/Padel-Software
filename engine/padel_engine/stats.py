@@ -17,8 +17,12 @@ SPRINT_SPEED = 3.0  # m/s
 SPRINT_MIN_S = 0.4
 
 
-def _speeds(t: np.ndarray, xy: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Devuelve (dt, distancia por tramo, velocidad por tramo) solo de tramos válidos."""
+def _speeds(t: np.ndarray, xy: np.ndarray, cut: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Devuelve (dt, distancia por tramo, velocidad por tramo) solo de tramos válidos.
+
+    Los tramos en los que el jugador sale cortado por el borde de la imagen no cuentan:
+    su posición es aproximada y generaría recorrido falso.
+    """
     if len(t) < 2:
         return np.zeros(0), np.zeros(0), np.zeros(0)
     dt = np.diff(t)
@@ -26,6 +30,8 @@ def _speeds(t: np.ndarray, xy: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.n
     with np.errstate(divide="ignore", invalid="ignore"):
         v = np.where(dt > 0, d / dt, 0.0)
     valid = (dt > 0) & (dt <= MAX_DT_FOR_DISTANCE) & (v <= MAX_HUMAN_SPEED)
+    if cut is not None and len(cut) == len(t):
+        valid &= ~(cut[1:] | cut[:-1])
     return np.where(valid, dt, 0.0), np.where(valid, d, 0.0), np.where(valid, v, 0.0)
 
 
@@ -59,9 +65,11 @@ def _sprints(t: np.ndarray, v: np.ndarray) -> list[dict]:
 def player_stats(track: Track, analyzed_duration_s: float, hits: list[HitCandidate]) -> dict:
     t, xy_raw, _ = track.arrays()
     xy = smooth_track(t, xy_raw)
-    dt, d, v = _speeds(t, xy)
+    cut = np.array([o.cut for o in track.observations], dtype=bool)
+    dt_all, _, _ = _speeds(t, xy)
+    dt, d, v = _speeds(t, xy, cut)
 
-    observed_s = float(dt.sum())
+    observed_s = float(dt_all.sum())
     zones = Counter(zone_of(p[1]) for p in xy)
     sides = Counter(side_of(p[1]) for p in xy)
     n = max(len(xy), 1)
@@ -74,11 +82,12 @@ def player_stats(track: Track, analyzed_duration_s: float, hits: list[HitCandida
         "campo": sides.most_common(1)[0][0] if sides else None,
         "lado_habitual": "izquierda" if np.median(xy[:, 0]) < COURT_WIDTH / 2 else "derecha",
         "tiempo_visible_s": round(observed_s, 1),
+        "tiempo_cortado_pct": round(100 * float(cut.mean()), 1) if len(cut) else 0.0,
         "cobertura_pct": round(100 * observed_s / analyzed_duration_s, 1) if analyzed_duration_s else 0.0,
         "distancia_m": round(float(d.sum()), 1),
         "velocidad_media_en_movimiento_mps": round(float(moving_v.mean()), 2) if len(moving_v) else 0.0,
         "velocidad_punta_mps": round(float(np.percentile(v, 98)), 2) if len(v) else 0.0,
-        "metros_por_minuto": round(float(d.sum()) / (observed_s / 60), 1) if observed_s > 0 else 0.0,
+        "metros_por_minuto": round(float(d.sum()) / (float(dt.sum()) / 60), 1) if dt.sum() > 0 else 0.0,
         "zonas_pct": {z: round(100 * zones.get(z, 0) / n, 1) for z in ("red", "transicion", "fondo")},
         "distancia_media_a_red_m": round(float(np.mean(np.abs(xy[:, 1] - NET_Y))), 2),
         "posicion_media": {"x": round(float(xy[:, 0].mean()), 2), "y": round(float(xy[:, 1].mean()), 2)},

@@ -39,7 +39,10 @@ class PipelineConfig:
     # y para posiciones y recorridos es suficiente. La bola necesitaría más (fase posterior).
     analysis_fps: float = 10.0
     max_players: int = 4
-    court_margin_m: float = 1.0
+    # Las paredes están en el límite de la pista: un margen pequeño basta y evita coger
+    # a espectadores pegados al cristal.
+    court_margin_m: float = 0.5
+    court_side_margin_m: float = 0.15
     min_person_conf: float = 0.3
     start_s: float = 0.0
     end_s: float | None = None
@@ -78,7 +81,10 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
 
     calib = load_calibration(calibration_path)
     points = _scale_points(calib["image_points"], calib.get("frame_size"), (w, h))
-    hom = CourtHomography.from_points(points)
+    lens = calib["lens_model"]
+    if lens is not None and calib.get("frame_size") and tuple(calib["frame_size"]) != (w, h):
+        lens = lens.scaled(w / calib["frame_size"][0], h / calib["frame_size"][1])
+    hom = CourtHomography.from_points(points, lens=lens)
 
     weights = cfg.weights or {"yolox": "yolox_m.onnx", "ultralytics": "yolo11s.pt"}.get(cfg.detector)
     if detector is None:
@@ -131,9 +137,9 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         if persons:
             feet = np.array([d.foot_point for d in persons])
             court_xy = hom.image_to_court_pts(_apply_h(H, feet))
-            mask = in_court(court_xy, cfg.court_margin_m)
+            mask = in_court(court_xy, cfg.court_margin_m, cfg.court_side_margin_m)
             obs = [
-                PlayerObservation(idx, t, (float(c[0]), float(c[1])), (d.x1, d.y1, d.x2, d.y2), d.conf)
+                PlayerObservation(idx, t, (float(c[0]), float(c[1])), (d.x1, d.y1, d.x2, d.y2), d.conf, cut=d.y2 >= frame.shape[0] - 3)
                 for d, c, m in zip(persons, court_xy, mask)
                 if m
             ]
@@ -180,6 +186,13 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         "Los golpes son estimaciones experimentales basadas en la bola, que se detecta de forma intermitente. No se clasifica el tipo de golpe todavía.",
         "Si dos jugadores se cruzan muy cerca, sus etiquetas pueden intercambiarse.",
     ]
+    # ¿Ve la cámara el fondo de la pista cercana? Si no, avisamos de cuánto se pierde.
+    bottom = hom.image_to_court_pts(np.array([[w / 2, h - 1]]))[0]
+    if 0.5 < bottom[1] < 10:
+        limitations.insert(
+            0,
+            f"La cámara no ve los últimos {bottom[1]:.1f} m de la pista cercana (junto al cristal de fondo): cuando un jugador está ahí sale cortado y su recorrido no se cuenta.",
+        )
     if hom.reprojection_error_px > 8:
         limitations.insert(0, f"Calibración imprecisa (error {hom.reprojection_error_px:.1f} px): revisa calibracion_check.png y el punto con más error: {max(hom.point_errors_px, key=hom.point_errors_px.get)}.")
 
@@ -203,6 +216,8 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
             "puntos": {k: [round(v[0], 1), round(v[1], 1)] for k, v in points.items()},
             "error_reproyeccion_px": round(hom.reprojection_error_px, 2),
             "error_por_punto_px": hom.point_errors_px,
+            "lente": lens.to_dict() if lens is not None else None,
+            "lente_rectitud_px": calib.get("lens_fit_px"),
         },
         "jugadores": [{k: v for k, v in p.items() if not k.startswith("_")} for p in players],
         "parejas": pairs,

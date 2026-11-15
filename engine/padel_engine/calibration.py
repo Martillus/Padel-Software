@@ -15,14 +15,32 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from .lens import LensModel, fit_lens
 from .court import KEYPOINT_LABELS_ES, KEYPOINTS, CourtHomography, draw_court_overlay
 
 
 def load_calibration(path: str | Path) -> dict:
+    """Lee la calibración. Claves:
+
+    * ``image_points``: puntos con nombre de la pista (obligatorio, mínimo 4).
+    * ``lines`` (opcional): puntos a lo largo de líneas rectas de la pista
+      ({"linea_saque_cercana": [[x, y], ...], ...}) para corregir el gran angular.
+    * ``lens`` (opcional): corrección ya calculada {f, cx, cy, k1, k2}.
+    """
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if "image_points" not in data:
         raise ValueError("El fichero de calibración debe tener la clave 'image_points'.")
     data["image_points"] = {k: tuple(v) for k, v in data["image_points"].items()}
+    data["lens_model"] = None
+    if data.get("lens"):
+        data["lens_model"] = LensModel(**data["lens"])
+    elif data.get("lines"):
+        size = data.get("frame_size")
+        if not size:
+            raise ValueError("Para corregir la lente hace falta 'frame_size' en la calibración.")
+        lens, before, after = fit_lens(list(data["lines"].values()), tuple(size))
+        data["lens_model"] = lens
+        data["lens_fit_px"] = {"antes": round(before, 2), "despues": round(after, 2)}
     return data
 
 
