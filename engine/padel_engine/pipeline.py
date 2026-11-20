@@ -92,7 +92,9 @@ def run_pipeline(video_path: str | Path, calibration_path: str | Path, out_dir: 
         detector = build_detector(
             cfg.detector, weights=weights, device=cfg.device, imgsz=cfg.imgsz, path=cfg.detections_path, conf=min(cfg.min_person_conf, 0.25)
         )
-    ref_frame = read_frame(video_path, int(calib.get("frame_index", 0)))
+    # La web marca la pista sobre un instante del vídeo (en segundos); la CLI, sobre un fotograma.
+    ref_index = int(round(float(calib["frame_time_s"]) * fps)) if calib.get("frame_time_s") is not None else int(calib.get("frame_index", 0))
+    ref_frame = read_frame(video_path, min(max(ref_index, 0), max(n_frames - 1, 0)))
     # Zona de la pista en el fotograma de calibración (con margen) para recortar antes de detectar.
     court_ref_poly = hom.court_to_image(np.array([[-1.5, -1.5], [11.5, -1.5], [11.5, 21.5], [-1.5, 21.5]]))
     court_floor = hom.court_to_image(np.array([[0, 0], [10, 0], [10, 20], [0, 20]]))

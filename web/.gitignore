@@ -1,0 +1,7 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# Vídeos y resultados de los análisis en modo local: NUNCA al repositorio
+.data/
+.env*.local
