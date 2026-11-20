@@ -18,3 +18,6 @@ export const CHAT_MAX_USER_MESSAGES = 20;
 export function formatPrice(eur: number): string {
   return eur.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
+
+/** ¿Se pueden analizar vídeos en esta instalación? (en Vercel, todavía no: falta el worker con GPU) */
+export const UPLOADS_ENABLED = process.env.NEXT_PUBLIC_UPLOADS_ENABLED !== "false";

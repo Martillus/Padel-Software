@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { formatPrice, MAX_VIDEO_MB, MAX_VIDEO_SECONDS, MIN_RECOMMENDED_SECONDS, PRICE_EUR } from "@/lib/config";
+import { formatPrice, MAX_VIDEO_MB, MAX_VIDEO_SECONDS, MIN_RECOMMENDED_SECONDS, PRICE_EUR, UPLOADS_ENABLED } from "@/lib/config";
 import { addToHistory } from "@/lib/history";
 import { formatDuration } from "@/lib/insights";
 import type { Calibration } from "@/lib/types";
@@ -260,6 +260,12 @@ export function UploadWizard() {
           <p className="mt-3 rounded-xl bg-brand/10 px-4 py-3 text-sm text-blue-200">
             <b>Modo de pruebas:</b> todavía no se cobra. Cuando conectemos Stripe, este botón abrirá el pago con tarjeta, Apple Pay o Google Pay.
           </p>
+          {!UPLOADS_ENABLED && (
+            <p className="mt-3 rounded-xl bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+              <b>Versión de prueba en internet:</b> todavía no se pueden analizar vídeos aquí (el motor de análisis aún no está en la nube).
+              Mientras tanto, mira el <Link href="/analisis/demo" className="underline">partido de ejemplo</Link>.
+            </p>
+          )}
           {submitError && <p className="mt-4 rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-200">{submitError}</p>}
           {progress !== null ? (
             <div className="mt-6">
@@ -272,7 +278,7 @@ export function UploadWizard() {
           ) : (
             <div className="mt-6 flex gap-3">
               <button className="btn-ghost" onClick={() => setStep(3)}>Atrás</button>
-              <button className="btn-primary flex-1" onClick={submit}>Analizar mi partido · {formatPrice(PRICE_EUR)}</button>
+              <button className="btn-primary flex-1" onClick={submit} disabled={!UPLOADS_ENABLED}>Analizar mi partido · {formatPrice(PRICE_EUR)}</button>
             </div>
           )}
         </div>

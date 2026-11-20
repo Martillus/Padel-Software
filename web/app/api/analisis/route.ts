@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { MAX_VIDEO_SECONDS } from "@/lib/config";
+import { MAX_VIDEO_SECONDS, UPLOADS_ENABLED } from "@/lib/config";
 import { KEYPOINTS } from "@/lib/court";
 import { createJob } from "@/lib/jobs";
 import type { Calibration } from "@/lib/types";
@@ -9,6 +9,9 @@ const VALID_POINTS = new Set(KEYPOINTS.map((k) => k.id));
 
 /** Crea un análisis (todavía sin vídeo). En producción, aquí se comprueba antes el pago. */
 export async function POST(req: Request) {
+  if (!UPLOADS_ENABLED) {
+    return NextResponse.json({ error: "En esta versión de prueba todavía no se pueden analizar vídeos." }, { status: 503 });
+  }
   let body: Record<string, unknown>;
   try {
     body = await req.json();
